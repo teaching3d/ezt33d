@@ -39,12 +39,11 @@ _PY311 = sys.version_info >= (3, 11)   # asyncio.TaskGroup
 def _ws_connect(url: str, headers: dict) -> object:
     """Return a websockets connection context manager with the correct header kwarg."""
     _ver = tuple(int(x) for x in importlib.metadata.version("websockets").split(".")[:2])
-    if _ver >= (13, 0):
-        # New asyncio-native client (v13+) uses extra_headers again
-        return websockets.connect(url, extra_headers=headers)
-    elif _ver >= (10, 0):
+    if _ver >= (10, 0):
+        # additional_headers is correct for websockets 10+ (including the v13 asyncio-native client)
         return websockets.connect(url, additional_headers=headers)
     else:
+        # websockets < 10 used the name extra_headers
         return websockets.connect(url, extra_headers=headers)
 
 # ── audio config ──────────────────────────────────────────────────────────────
