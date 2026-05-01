@@ -53,8 +53,7 @@ CHANNELS     = 1
 DTYPE        = "int16"
 CHUNK_FRAMES = int(SAMPLE_RATE * 0.1)   # 100 ms chunks
 
-# GA endpoint (wss://api.deepgram.com, not the old agent.deepgram.com subdomain)
-AGENT_URL = "wss://api.deepgram.com/v1/agent/converse"
+AGENT_URL = "wss://agent.deepgram.com/v1/agent/converse"
 
 SYSTEM_PROMPT = "You are a helpful voice assistant. Keep replies brief and conversational."
 
