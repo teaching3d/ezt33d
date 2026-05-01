@@ -6,9 +6,12 @@ Requirements:
     pip install websockets sounddevice numpy
 
 Usage:
-    DEEPGRAM_API_KEY=<your-key> python deepgram_agent.py
+    DEEPGRAM_API_KEY=<your-key> python deepgram_agent.py              # GPT-5.5 (default)
+    DEEPGRAM_API_KEY=<your-key> python deepgram_agent.py --llm gpt-5.5
+    DEEPGRAM_API_KEY=<your-key> python deepgram_agent.py --llm claude-sonnet-4-6
 """
 
+import argparse
 import asyncio
 import json
 import os
@@ -30,32 +33,42 @@ CHUNK_FRAMES = int(SAMPLE_RATE * 0.1)   # 100 ms chunks
 
 AGENT_URL = "wss://agent.deepgram.com/agent"
 
-SETTINGS = {
-    "type": "SettingsConfiguration",
-    "audio": {
-        "input":  {"encoding": "linear16", "sample_rate": SAMPLE_RATE},
-        "output": {"encoding": "linear16", "sample_rate": SAMPLE_RATE, "container": "none"},
-    },
-    "agent": {
-        "listen": {"model": "nova-3"},
-        "think": {
-            "provider": {"type": "open_ai"},
-            "model": "gpt-4o-mini",
-            "instructions": (
-                "You are a helpful voice assistant. "
-                "Keep replies brief and conversational."
-            ),
-        },
-        "speak": {"model": "aura-2-thalia-en"},
-    },
+SYSTEM_PROMPT = "You are a helpful voice assistant. Keep replies brief and conversational."
+
+# Supported LLM aliases → (provider_type, model_id)
+LLM_CONFIGS: dict[str, tuple[str, str]] = {
+    "gpt-5.5":           ("open_ai",   "gpt-5.5"),
+    "claude-sonnet-4-6": ("anthropic", "claude-sonnet-4-6"),
 }
+DEFAULT_LLM = "gpt-5.5"
+
+
+def build_settings(llm: str) -> dict:
+    provider_type, model_id = LLM_CONFIGS[llm]
+    return {
+        "type": "SettingsConfiguration",
+        "audio": {
+            "input":  {"encoding": "linear16", "sample_rate": SAMPLE_RATE},
+            "output": {"encoding": "linear16", "sample_rate": SAMPLE_RATE, "container": "none"},
+        },
+        "agent": {
+            "listen": {"model": "nova-3"},
+            "think": {
+                "provider": {"type": provider_type},
+                "model": model_id,
+                "instructions": SYSTEM_PROMPT,
+            },
+            "speak": {"model": "aura-2-thalia-en"},
+        },
+    }
 
 
 # ── main class ────────────────────────────────────────────────────────────────
 
 class VoiceAgent:
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, llm: str = DEFAULT_LLM) -> None:
         self.api_key = api_key
+        self.llm = llm
 
         # asyncio side
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -162,8 +175,8 @@ class VoiceAgent:
         print("Connecting to Deepgram Voice Agent …")
 
         async with websockets.connect(AGENT_URL, additional_headers=headers) as ws:
-            await ws.send(json.dumps(SETTINGS))
-            print("Ready — speak into your microphone.  Ctrl+C to quit.\n")
+            await ws.send(json.dumps(build_settings(self.llm)))
+            print(f"LLM: {self.llm}  |  Ready — speak into your microphone.  Ctrl+C to quit.\n")
 
             with sd.InputStream(
                 samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE,
@@ -181,12 +194,26 @@ class VoiceAgent:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Two-way voice chat with a Deepgram Voice Agent.")
+    parser.add_argument(
+        "--llm",
+        choices=list(LLM_CONFIGS),
+        default=DEFAULT_LLM,
+        metavar="MODEL",
+        help=f"LLM backend for the agent. Choices: {', '.join(LLM_CONFIGS)}. Default: {DEFAULT_LLM}",
+    )
+    return parser.parse_args()
+
+
 async def main() -> None:
+    args = parse_args()
+
     api_key = os.environ.get("DEEPGRAM_API_KEY")
     if not api_key:
         sys.exit("Error: DEEPGRAM_API_KEY environment variable is not set.")
 
-    agent = VoiceAgent(api_key)
+    agent = VoiceAgent(api_key, llm=args.llm)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
