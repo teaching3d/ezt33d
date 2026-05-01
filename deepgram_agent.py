@@ -216,11 +216,18 @@ async def main() -> None:
     agent = VoiceAgent(api_key, llm=args.llm)
 
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(
-            sig,
-            lambda: (print("\nStopping …"), agent._stop.set()),
-        )
+
+    def _stop(*_):
+        print("\nStopping …")
+        loop.call_soon_threadsafe(agent._stop.set)
+
+    try:
+        # Unix/Mac: preferred asyncio-native signal handling
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _stop)
+    except NotImplementedError:
+        # Windows: ProactorEventLoop doesn't support add_signal_handler
+        signal.signal(signal.SIGINT, _stop)
 
     await agent.run()
     print("Done.")
